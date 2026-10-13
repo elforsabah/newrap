@@ -1,8 +1,1 @@
-Step 1 of 6: SE11, the text table of the service type
-
-Transaction SE11, Database table, enter TESERVICETYPET, Display.
-On the Fields tab, note for me:
-the key fields (the ones with the Key checkbox),
-the name of the text field and its length (I expect something like TEXT or BEZEICH, CHAR 30 or 40).
-Still in SE11, display EWA_ORDER_OBJECT, find the field SERVICE_TYPE, and read the column Check table. I expect TESERVICETYPE.
-Transaction SE16, table TESERVICETYPET, selection SPRAS = D, execute. Take a screenshot of the list. These are the words the drivers will see.
+<img width="1294" height="559" alt="image" src="https://github.com/user-attachments/assets/996e2a6f-6f7c-4dbd-b6c6-346ba3f9b175" />
