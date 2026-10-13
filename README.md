@@ -1,3 +1,8 @@
-neues Zielfeld für Bezeichnungstext der W&R-Leistungsart am BMS-Endpunkt wird heißen: “ContainerMovementTypeInfo”
-Quelle in SAP: EWA_ORDER_OBJECT-SERVICE_TYPE → TESERVICETYPET)
-konkatenieren mit Abfallmenge+Einheit (außer bei null bzw. default / ggf. nur bei Material ausliefern)
+Step 1 of 6: SE11, the text table of the service type
+
+Transaction SE11, Database table, enter TESERVICETYPET, Display.
+On the Fields tab, note for me:
+the key fields (the ones with the Key checkbox),
+the name of the text field and its length (I expect something like TEXT or BEZEICH, CHAR 30 or 40).
+Still in SE11, display EWA_ORDER_OBJECT, find the field SERVICE_TYPE, and read the column Check table. I expect TESERVICETYPE.
+Transaction SE16, table TESERVICETYPET, selection SPRAS = D, execute. Take a screenshot of the list. These are the words the drivers will see.
