@@ -1,3 +1,1 @@
-IV_SERVICE_UUID = 005056B8C72B1FD1AEEEE6FFCD0B4000
-IV_ZZ_BMS_STATUS = BEGONNEN
-IV_POBJNR = WE00000000000002478798
+<img width="1752" height="1054" alt="image" src="https://github.com/user-attachments/assets/6840d758-4f9d-4792-8ce5-143fa4bf20fa" />
