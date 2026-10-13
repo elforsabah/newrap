@@ -1,1 +1,8 @@
-https://evhsap-srv08.swhsap.vvv.vvv-konzern.net:44301/sap/opu/odata4/sap/zapi_bms_orderhead_o4/srvd_a2x/sap/zapi_bms_orderhead/0001/OrderHead('1256')
+{
+  "ActualStartTime": "06:30:00",
+  "ActualFinishTime": "14:05:00",
+  "PauseTime": "00:30:00",
+  "ActualDuration": "07:05:00",
+  "DistanceTraveled": 123.4,
+  "DistanceTraveledUnit": "KM"
+}
