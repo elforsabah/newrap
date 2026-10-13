@@ -1,2 +1,3 @@
-SE16, /PLCE/TPDSRVCST, SERVICE_UUID = F73C23832FF91FD09CAFC7773C999263. That is the service of your own endpoint test of 29.09 (EAP WE00000000000000007762, PATCH BEGONNEN under HWSB10035). We never did that SE16 check. If ZZ_BMS_STATUS = BEGONNEN there, the endpoint path works for your user and the difference is the user.
-Gateway Client, your user HWSB10035, PATCH on EapStatus('WE00000000000002478798') with { "BmsStatus": "BEENDET" } (the EAP already carries BEENDET, so the rank rule lets it through). Expect 200/204. Then SE16 /PLCE/TPDSRVCST for 005056B8C72B1FD1AEEEE6FFCD0B4000: BEENDET?
+
+
+<img width="1875" height="1023" alt="image" src="https://github.com/user-attachments/assets/6e236c8e-a61d-4346-9a6f-0c139b2b2a71" />
