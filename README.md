@@ -1,22 +1,2 @@
-{
-  "ActualDate": "2026-09-30",
-  "ActualTime": "12:34:00",
-  "ActualDuration": 4.2,
-  "ActualDurationUnit": "H",
-  "DistanceTraveled": 12.3,
-  "DistanceTraveledUnit": "KM",
-  "ActualContainerType": "9900010",
-  "ActualContainerCount": 1,
-  "ActualPlacedSerialNumber": "XYZ123",
-  "BillingQuantity": "1",
-  "ActualContainerStoragePlant": "3550",
-  "ActualContainerStorageLocation": "123",
-  "ActualWaste": "A.BKEHRICHT",
-  "WasteWeight": 3.5,
-  "WeightUnit": "TO",
-  "WasteVolume": 12.3,
-  "VolumeUnit": "L",
-  "ConfirmationNote1": "04",
-  "ConfirmationNote2": "01",
-  "ConfirmationNote3": ""
-}
+Neue Datengrundlage für Feld “Hauptposition” in P&D und auch für die Markierung ist jetzt folgendes Feld:
+EWA_ORDER_OBJECT-ZZ_INFORMATIONAL_GROUP
