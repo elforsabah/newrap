@@ -1,4 +1,3 @@
-<img width="1351" height="425" alt="image" src="https://github.com/user-attachments/assets/b94d229b-2875-4cab-8ded-9202c5ba9d41" />
 METHOD touranbmsfreigeben.
 
 *----------------------------------------------------------------------*
@@ -104,6 +103,9 @@ METHOD touranbmsfreigeben.
       watp_noteintnr TYPE /watp/dnoteintnr,
       sdaufnr        TYPE vbeln_va,
       sdposnr        TYPE posnr,
+      service_type   TYPE service_type,       " W&R Leistungsart (containerMovementTypeInfo)
+      mnamin         TYPE ehs_mnamin,         " Abfallmenge (Planung), QUAN 13,3
+      mnamqin        TYPE ehs_mnamqin,        " its unit
     END OF ty_ewaobj,
     tt_ewaobj TYPE HASHED TABLE OF ty_ewaobj WITH UNIQUE KEY pobjnr,
 
@@ -160,6 +162,14 @@ METHOD touranbmsfreigeben.
     END OF ty_bp_key,
     tt_bp_key TYPE SORTED TABLE OF ty_bp_key WITH UNIQUE KEY partner,
 
+    " text of the W&R service type (TESERVICETYPET), one language,
+    " read once for all EAPs — feeds containerMovementTypeInfo
+    BEGIN OF ty_svt_text,
+      service_type TYPE service_type,
+      vtext        TYPE servicetype_txt,     " TESERVICETYPET-VTEXT, CHAR 30
+    END OF ty_svt_text,
+    tt_svt_text TYPE HASHED TABLE OF ty_svt_text WITH UNIQUE KEY service_type,
+
     " per tour: how many services it has and how many the signature
     " check blocked (STEP 4c) — decides whether BMS is contacted at all
     BEGIN OF ty_sig_count,
@@ -209,7 +219,13 @@ METHOD touranbmsfreigeben.
     lv_json          TYPE string,
     lv_upd_subrc     TYPE sy-subrc,
     lv_count_ok      TYPE i,
-    lv_count_error   TYPE i.
+    lv_count_error   TYPE i,
+    lt_svt_text      TYPE tt_svt_text,
+    ls_svt_text      TYPE ty_svt_text,
+    lv_qty_info      TYPE abap_bool,         " ZWRTWAALAPRCTP-BMS_QTY_INFO
+    lv_qty_text      TYPE string,
+    lv_unit_ext      TYPE msehi,             " external unit from CUNIT output
+    lv_unit_out      TYPE string.
 
   " ErrorResponse: { "error": { "message": ..., "timestamp": ... } }
   DATA: BEGIN OF ls_err_body,
@@ -218,6 +234,11 @@ METHOD touranbmsfreigeben.
             timestamp TYPE string,
           END OF error,
         END OF ls_err_body.
+
+  " Decision D2 (19.10.2026): only MNAMIN = 0 is skipped. Type 03 carries a
+  " system default of 1 TO on every item; if the Fachbereich ever sets
+  " BMS_QTY_INFO for 03, add that value here.
+  CONSTANTS lc_qty_default TYPE ehs_mnamin VALUE 0.
 
 *----------------------------------------------------------------------*
 * Order of events (since 23.09.2026):
@@ -323,11 +344,27 @@ METHOD touranbmsfreigeben.
            /watp/avvcode   AS watp_avvcode,
            /watp/notenr    AS watp_notenr,
            /watp/noteintnr AS watp_noteintnr,
-           sdaufnr, sdposnr
+           sdaufnr, sdposnr,
+           service_type, mnamin, mnamqin
       FROM ewa_order_object
       FOR ALL ENTRIES IN @lt_pobj
       WHERE pobjnr = @lt_pobj-pobjnr
       INTO CORRESPONDING FIELDS OF TABLE @lt_ewaobj.
+  ENDIF.
+
+*----------------------------------------------------------------------*
+* STEP 4d — texts of the W&R service types (containerMovementTypeInfo)
+*           One read for all EAPs. Language 'D': the driver tablet is
+*           German and every other payload text is German, independent
+*           of the dispatcher's logon language.
+*----------------------------------------------------------------------*
+  IF lt_ewaobj IS NOT INITIAL.
+    SELECT service_type, vtext
+      FROM teservicetypet
+      FOR ALL ENTRIES IN @lt_ewaobj
+      WHERE spras        = 'D'
+        AND service_type = @lt_ewaobj-service_type
+      INTO CORRESPONDING FIELDS OF TABLE @lt_svt_text.
   ENDIF.
 
 
@@ -630,10 +667,14 @@ METHOD touranbmsfreigeben.
       " --- 6c Movement type: new | change | collect -----------------------
       "     CONDENSE matters — a CHAR column with trailing blanks sends
       "     "change " which will not convert to the BMS enum.
-      SELECT SINGLE bms_movement_type
+      "     BMS_QTY_INFO (SM30 flag) decides whether the planned quantity
+      "     is appended to containerMovementTypeInfo in 6d.
+      CLEAR lv_qty_info.
+
+      SELECT SINGLE bms_movement_type, bms_qty_info
         FROM zwrtwaalaprctp
         WHERE service_type = @ls_svc-action
-        INTO @lv_movement_type.
+        INTO ( @lv_movement_type, @lv_qty_info ).
 
       lv_movement_type = to_lower( condense( lv_movement_type ) ).
 
@@ -728,12 +769,59 @@ METHOD touranbmsfreigeben.
       ENDIF.
 
       " containerMovementTypeInfo is shown to the driver in the order
-      " overview. It and internalRemark are required by the running API
-      " and [Required] rejects empty strings, so both always carry content.
+      " overview. Content, in this order of precedence:
+      "   1) TESERVICETYPET-VTEXT of the EAP's service type, first letter
+      "      upper, rest lower ("SOFORTBEFÜLLUNG" -> "Sofortbefüllung")
+      "   2) the movement word, because the running API rejects an
+      "      empty string (old codes ST / LE / F have no VTEXT)
+      " followed by the planned waste quantity and unit when the service
+      " type asks for it (BMS_QTY_INFO) and MNAMIN is not 0.
       DATA(lv_move_info) = SWITCH string( lv_movement_type
                              WHEN 'new'     THEN 'Aufstellung'
                              WHEN 'collect' THEN 'Einzug'
                              ELSE                'Wechsel' ).
+
+      READ TABLE lt_svt_text INTO ls_svt_text
+        WITH TABLE KEY service_type = ls_ewa-service_type.
+      IF sy-subrc <> 0.
+        READ TABLE lt_svt_text INTO ls_svt_text
+          WITH TABLE KEY service_type = CONV service_type( ls_svc-action ).
+      ENDIF.
+      IF sy-subrc = 0 AND ls_svt_text-vtext IS NOT INITIAL.
+        DATA(lv_vtext) = condense( to_lower( ls_svt_text-vtext ) ).
+        lv_move_info = |{ to_upper( lv_vtext(1) ) }{ lv_vtext+1 }|.
+      ENDIF.
+
+      " planned quantity + unit, German notation: 2,5 t / 3 t / 0,75 m3
+      CLEAR: lv_qty_text, lv_unit_out, lv_unit_ext.
+
+      IF lv_qty_info = abap_true
+         AND ls_ewa-mnamin IS NOT INITIAL
+         AND ls_ewa-mnamin <> lc_qty_default.
+
+        lv_qty_text = |{ ls_ewa-mnamin NUMBER = RAW }|.         " 2.500
+        IF lv_qty_text CS '.'.
+          SHIFT lv_qty_text RIGHT DELETING TRAILING '0'.        " 2.5
+          SHIFT lv_qty_text RIGHT DELETING TRAILING '.'.        " 3
+          CONDENSE lv_qty_text NO-GAPS.
+          REPLACE '.' IN lv_qty_text WITH ','.                  " 2,5
+        ENDIF.
+
+        " external unit (t, kg, m3) instead of the internal key (TO, KG, M3)
+        CALL FUNCTION 'CONVERSION_EXIT_CUNIT_OUTPUT'
+          EXPORTING
+            input    = ls_ewa-mnamqin
+            language = 'D'
+          IMPORTING
+            output   = lv_unit_ext
+          EXCEPTIONS
+            OTHERS   = 1.
+        lv_unit_out = COND string( WHEN sy-subrc = 0 AND lv_unit_ext IS NOT INITIAL
+                                   THEN condense( lv_unit_ext )
+                                   ELSE condense( ls_ewa-mnamqin ) ).
+
+        lv_move_info = condense( |{ lv_move_info } { lv_qty_text } { lv_unit_out }| ).
+      ENDIF.
 
       DATA(lv_internal_remark) = COND string(
         WHEN ls_svc-additional_text IS NOT INITIAL
