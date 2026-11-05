@@ -1,1 +1,19 @@
-<img width="1155" height="618" alt="image" src="https://github.com/user-attachments/assets/5e80f370-9d57-4e84-9c86-063492a962f5" />
+- Analyse fachlicher Anforderungen aus der Entsorgungswirtschaft (User Stories, Tickets, Abstimmung mit Fachbereich und Beratung) und Überführung in technische Konzepte mit Lösungsalternativen und Aufwandsschätzung
+- Verantwortung für die technische Architektur kundenspezifischer Erweiterungen und Integrationslösungen in SAP S/4HANA Utilities (IS-U Waste & Recycling, Prologa P&D, Planung und Disposition): Erweiterung der Standard-Business-Objects statt eigener Anwendungen, Datenänderungen ausschließlich über Business-Objects mit sauberer Transaktionsführung
+- Konzeption und Entwicklung neuer sowie Erweiterung bestehender SAP-Fiori-Anwendungen mit ABAP OO, ABAP RAP (managed und unmanaged), CDS View Entities und Fiori Elements
+- Weiterentwicklung der Dispositions-App (P&D Planning Cockpit) für Entsorgungsaufträge: Gruppierung von Serviceleistungen (Haupt-/Unterpositionen), farbliche Kennzeichnung für Disponenten, Filter- und Suchfunktionen, Änderungsfunktion für Entsorgungsanlagen mit automatischer Neuberechnung der Tourenrouten
+- Implementierung von Geschäftslogik in RAP: Actions mit Parametern und Wertehilfen, Determinations, Validierungen, virtuelle Elemente, Sperr- und Nachrichtenkonzept, UI-Annotationen (Fiori Elements)
+- Datenmodellierung mit CDS sowie Erweiterung von Standardtabellen um Kundenfelder und Customizing-Tabellen mit Pflegedialogen
+- Bereitstellung und Nutzung von OData-V2/V4-Services über SAP Gateway (UI- und Web-API-Services mit technischen Benutzern und Berechtigungskonzept)
+- Konzeption und Umsetzung einer bidirektionalen Schnittstelle zwischen SAP S/4HANA P&D und einem externen Betriebsmanagementsystem (BMS, Fahrer-Tablets): ausgehend REST/JSON mit Token-Authentifizierung für Tourfreigabe und Storno, eingehend OData-V4-Web-APIs für Rückmelde-, Status- und Leistungsdaten; dazu Feldmapping, Statusverwaltung, Protokollierung und Fehlerbehandlung, sichere Ablage der Zugangsdaten sowie Abstimmung des API-Vertrags mit dem Hersteller
+- Entwicklung fachlicher Prüfungen für die Nachweisführung: Prüfung elektronischer Signaturen auf Begleit- und Übernahmescheinen (eANV) vor der Tourfreigabe sowie Schein- und Abfallschlüsselprüfung beim Wechsel der Entsorgungsanlage
+- Entwicklung einer Terminal-Anwendung für die Wiegebrücke (SAP UI5, OData V4, CDS) mit Fahrer- und Vertragsidentifikation per Ausweiskarte
+- Anbindung der Terminal-Anwendung an SAP S/4HANA über RAP-Actions, inklusive Validierung und benutzerfreundlicher Fehlerbehandlung
+- Konzeption mit Aufwandsschätzung und Umsetzung einer RAP-Anwendung zur Anzeige von Containerbeständen nach Containertyp und Lagerort, inklusive Customizing und editierbarer Sicherheitsbestände
+- Konzeption einer Druckfunktion im Planungscockpit sowie der Übernahme von Vertragsdokumenten (ArchiveLink, DMS) in die Disposition, jeweils mit Alternativen- und Aufwandsbewertung
+- Ursachenanalyse und Optimierungskonzept für Laufzeit und Überlappung periodischer Hintergrundjobs der Auftragsübergabe an die Disposition
+- Fehleranalyse und Debugging komplexer ABAP-Laufzeitfehler sowie Performance- und Datenkonsistenzprobleme (u. a. Hintergrundverarbeitung mit bgRFC, Anwendungsprotokoll)
+- Erstellung von Migrationsreports zur Bereinigung und Nachpflege von Bestandsdaten
+- Code-Reviews von ABAP-, RAP- und UI5-Entwicklungen mit priorisierten Findings und Korrekturvorschlägen; Erstellung von Testprogrammen und Testplänen
+- Fachliche und technische Dokumentation sowie API-Verträge, dazu Präsentationen für Fachbereich und Stakeholder (auf Deutsch)
+- Abstimmung mit Fachbereich, internen Entwicklern, Beratern und externen Schnittstellenpartnern zu API-Spezifikationen und Anforderungen sowie Übergabe an den Betrieb.
