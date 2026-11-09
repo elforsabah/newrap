@@ -23,6 +23,17 @@ public section.
   END OF ty_sig_missing .
   types:
     tt_sig_missing TYPE HASHED TABLE OF ty_sig_missing WITH UNIQUE KEY pobjnr .
+  types:
+  " output of GET_EANV_NOTES: one line per EAP whose Schein hangs on an eANV Nachweis
+    BEGIN OF ty_eanv_note,
+    pobjnr    TYPE j_objnr,
+    noteintnr TYPE /watp/dnoteintnr,     " the Schein on the EAP (internal number)
+    notenr    TYPE string,               " external Schein number, readable (msg 057 &2)
+    certtype  TYPE string,               " Scheinart (CERTTYPE, e.g. BS_DE), not in the message today
+    nwnr      TYPE string,               " external Nachweis number, e.g. SNFG12312344 (msg 057 &4)
+  END OF ty_eanv_note .
+  types:
+    tt_eanv_notes TYPE HASHED TABLE OF ty_eanv_note WITH UNIQUE KEY pobjnr .
 
   constants:
     BEGIN OF gc_certtype,
@@ -59,6 +70,18 @@ public section.
       !IT_ORDERS type TT_SIG_ORDERS
     returning
       value(RT_MISSING) type TT_SIG_MISSING .
+"! Returns every EAP that carries a Schein (BS / ÜS / SBS) whose
+"! Nachweis takes part in eANV (TARBNW-DIGI_SIG = 'X'). Nothing about
+"! signatures is checked. Used by "Anlage ändern": such an EAP must
+"! keep its disposal facility.
+"! NOT returned: EAP without Schein, Schein on a paper Nachweis,
+"! Schein number that does not exist, Nachweis flagged for deletion.
+"! Everything is a mass read — call once per action call, not per service.
+  class-methods GET_EANV_NOTES
+    importing
+      !IT_ORDERS type TT_SIG_ORDERS
+    returning
+      value(RT_NOTES) type TT_EANV_NOTES .
     "-----------------------------------------------------------------------
     " Helper: obtain a Bearer token from the BMS authentication endpoint.
     " Called once per tour (not once per service) to avoid redundant
@@ -424,6 +447,175 @@ CLASS ZCL_WR_PD_TOUR_HELPER IMPLEMENTATION.
                        THEN condense( |{ <n>-notenr    ALPHA = OUT }| )
                        ELSE condense( |{ <n>-noteintnr ALPHA = OUT }| ) ).
       <m>-v3 = condense( <n>-certtype ).
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_WR_PD_TOUR_HELPER=>GET_EANV_NOTES
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IT_ORDERS                      TYPE        TT_SIG_ORDERS
+* | [<-()] RT_NOTES                       TYPE        TT_EANV_NOTES
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD get_eanv_notes.
+*----------------------------------------------------------------------*
+* "Anlage ändern" (follow-up to #40611): an EAP whose Schein hangs on a
+* Nachweis that takes part in eANV keeps its disposal facility. This
+* method only answers "which EAPs are those". No signature is checked.
+* Same data path and the same "nur eANV-teilnehmende NW" rule (A12) as
+* CHECK_NOTE_SIGNATURES (#42128):
+*   EWA_ORDER_OBJECT-/WATP/NOTEINTNR
+*     → /WATP/TARBNOTES (CERTTYPE, NOTENR, COLLECT_NOTE, NWINTNR)
+*     → /WATP/TARBNW-DIGI_SIG = 'X', LOEVM = space
+*
+* Which Nachweis is looked at:
+*   BS_DE / SBS_DE  the Schein's own NWINTNR
+*   UES_DE          its own NWINTNR; when that is empty, the NWINTNR of
+*                   the Sammelbegleitschein behind it (TARBNOTES-
+*                   COLLECT_NOTE holds the SBS's INTERNAL number).
+*                   The signature check always goes to the SBS for an
+*                   ÜS, so the SBS is the safe fallback here as well.
+*
+* Alternative the ticket mentions ("Scheine, die in /WATP/TARBZKSDOC
+* vorkommen"): deliberately NOT used. A Schein on an eANV Nachweis that
+* has no ZKS document yet would slip through there, and DIGI_SIG is the
+* attribute #42128 already agreed on with the department.
+*
+* Result per EAP carries the readable values for message 057:
+*   notenr   = external Schein number (NOTENR, else internal), ALPHA = OUT
+*   certtype = Scheinart (CERTTYPE)
+*   nwnr     = external Nachweis number (TARBNW-NWNR)
+*----------------------------------------------------------------------*
+    TYPES:
+      BEGIN OF ty_key,
+        noteintnr TYPE /watp/dnoteintnr,
+      END OF ty_key,
+      tt_keys TYPE SORTED TABLE OF ty_key WITH UNIQUE KEY noteintnr,
+
+      BEGIN OF ty_nw_key,
+        nwintnr TYPE /watp/darbnwintnr,
+      END OF ty_nw_key,
+      tt_nw_keys TYPE SORTED TABLE OF ty_nw_key WITH UNIQUE KEY nwintnr,
+
+      BEGIN OF ty_note,
+        noteintnr    TYPE /watp/dnoteintnr,
+        certtype     TYPE /watp/dcerttype,
+        notenr       TYPE /watp/dnotenr,
+        collect_note TYPE /watp/darbcollectnote,
+        nwintnr      TYPE /watp/darbnwintnr,
+      END OF ty_note,
+      tt_notes TYPE HASHED TABLE OF ty_note WITH UNIQUE KEY noteintnr,
+
+      BEGIN OF ty_nw,
+        nwintnr  TYPE /watp/darbnwintnr,
+        nwnr     TYPE /watp/tarbnw-nwnr,
+        digi_sig TYPE /watp/darbdigi_sig,
+      END OF ty_nw,
+      tt_nw TYPE HASHED TABLE OF ty_nw WITH UNIQUE KEY nwintnr.
+
+    DATA:
+      lt_keys     TYPE tt_keys,
+      lt_sbs_keys TYPE tt_keys,
+      lt_nw_keys  TYPE tt_nw_keys,
+      lt_notes    TYPE tt_notes,
+      lt_sbs      TYPE tt_notes,
+      lt_nw       TYPE tt_nw.
+
+    FIELD-SYMBOLS:
+      <o>  TYPE ty_sig_order,
+      <n>  TYPE ty_note,
+      <s>  TYPE ty_note,
+      <nw> TYPE ty_nw.
+
+    " --- 1. distinct Schein numbers; an EAP without Schein is not returned
+    LOOP AT it_orders ASSIGNING <o> WHERE noteintnr IS NOT INITIAL.
+      INSERT VALUE #( noteintnr = <o>-noteintnr ) INTO TABLE lt_keys.
+    ENDLOOP.
+
+    IF lt_keys IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    " --- 2. Schein master -----------------------------------------------------
+    SELECT noteintnr, certtype, notenr, collect_note, nwintnr
+      FROM /watp/tarbnotes
+      FOR ALL ENTRIES IN @lt_keys
+      WHERE noteintnr = @lt_keys-noteintnr
+      INTO TABLE @lt_notes.
+
+    IF lt_notes IS INITIAL.
+      RETURN.                     " every number points to no Schein
+    ENDIF.
+
+    " --- 3. SBS behind an ÜS that has no Nachweis link of its own ------------
+    LOOP AT lt_notes ASSIGNING <n>
+      WHERE certtype     = gc_certtype-ues
+        AND nwintnr      IS INITIAL
+        AND collect_note IS NOT INITIAL.
+      IF NOT line_exists( lt_notes[ noteintnr = <n>-collect_note ] ).
+        INSERT VALUE #( noteintnr = <n>-collect_note ) INTO TABLE lt_sbs_keys.
+      ENDIF.
+    ENDLOOP.
+
+    IF lt_sbs_keys IS NOT INITIAL.
+      SELECT noteintnr, certtype, notenr, collect_note, nwintnr
+        FROM /watp/tarbnotes
+        FOR ALL ENTRIES IN @lt_sbs_keys
+        WHERE noteintnr = @lt_sbs_keys-noteintnr
+        INTO TABLE @lt_sbs.
+
+      LOOP AT lt_sbs ASSIGNING <s>.
+        INSERT <s> INTO TABLE lt_notes.
+      ENDLOOP.
+    ENDIF.
+
+    " inherit the SBS's Nachweis into the ÜS (non-key field, in place)
+    LOOP AT lt_notes ASSIGNING <n>
+      WHERE certtype     = gc_certtype-ues
+        AND nwintnr      IS INITIAL
+        AND collect_note IS NOT INITIAL.
+      READ TABLE lt_notes ASSIGNING <s> WITH TABLE KEY noteintnr = <n>-collect_note.
+      IF sy-subrc = 0.
+        <n>-nwintnr = <s>-nwintnr.
+      ENDIF.
+    ENDLOOP.
+
+    " --- 4. does the Nachweis take part in eANV? (A12) -----------------------
+    LOOP AT lt_notes ASSIGNING <n> WHERE nwintnr IS NOT INITIAL.
+      INSERT VALUE #( nwintnr = <n>-nwintnr ) INTO TABLE lt_nw_keys.
+    ENDLOOP.
+
+    IF lt_nw_keys IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    SELECT nwintnr, nwnr, digi_sig
+      FROM /watp/tarbnw
+      FOR ALL ENTRIES IN @lt_nw_keys
+      WHERE nwintnr = @lt_nw_keys-nwintnr
+        AND loevm   = @space
+      INTO TABLE @lt_nw.
+
+    " --- 5. result: EAP → its Schein, with the readable message values ------
+    LOOP AT it_orders ASSIGNING <o> WHERE noteintnr IS NOT INITIAL.
+
+      READ TABLE lt_notes ASSIGNING <n> WITH TABLE KEY noteintnr = <o>-noteintnr.
+      CHECK sy-subrc = 0 AND <n>-nwintnr IS NOT INITIAL.
+
+      READ TABLE lt_nw ASSIGNING <nw> WITH TABLE KEY nwintnr = <n>-nwintnr.
+      CHECK sy-subrc = 0 AND <nw>-digi_sig = abap_true.
+
+      INSERT VALUE #(
+        pobjnr    = <o>-pobjnr
+        noteintnr = <n>-noteintnr
+        notenr    = COND #( WHEN <n>-notenr IS NOT INITIAL
+                            THEN condense( |{ <n>-notenr    ALPHA = OUT }| )
+                            ELSE condense( |{ <n>-noteintnr ALPHA = OUT }| ) )
+        certtype  = condense( <n>-certtype )
+        nwnr      = condense( <nw>-nwnr )
+      ) INTO TABLE rt_notes.
+
     ENDLOOP.
 
   ENDMETHOD.
