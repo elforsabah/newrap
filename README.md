@@ -1,4 +1,17 @@
-<img width="1528" height="424" alt="image" src="https://github.com/user-attachments/assets/1c0cfad8-7557-4f8e-8df4-e63288b5d36f" />
-
-
-<img width="903" height="476" alt="image" src="https://github.com/user-attachments/assets/8eb1d51d-466d-42f2-ad06-2b56f5c30d0e" />
+IF LDMRDETAILREF->LDMRPOSREF->ZIEME IS INITIAL.
+* Row has no unit (service added in IC): keep the RA value and take over its unit.
+  LQUANT = LADDSRVREF->ZMENG.
+  LDMRDETAILREF->LDMRPOSREF->ZIEME = LADDSRVREF->ZIEME.
+ELSEIF LADDSRVREF->ZIEME IS INITIAL
+    OR LADDSRVREF->ZIEME = LDMRDETAILREF->LDMRPOSREF->ZIEME.
+  LQUANT = LADDSRVREF->ZMENG.
+ELSE.
+  CL_EEWA_BO_MEASUREMENT=>CL_UNIT_CONVERSION2(
+    EXPORTING
+      PAR_QUANIN  = LADDSRVREF->ZMENG
+      PAR_UNITIN  = LADDSRVREF->ZIEME
+      PAR_UNITOUT = LDMRDETAILREF->LDMRPOSREF->ZIEME
+    IMPORTING
+      PAR_QUANOUT = LQUANT
+  ).
+ENDIF.
