@@ -1,17 +1,5 @@
-IF LDMRDETAILREF->LDMRPOSREF->ZIEME IS INITIAL.
-* Row has no unit (service added in IC): keep the RA value and take over its unit.
-  LQUANT = LADDSRVREF->ZMENG.
-  LDMRDETAILREF->LDMRPOSREF->ZIEME = LADDSRVREF->ZIEME.
-ELSEIF LADDSRVREF->ZIEME IS INITIAL
-    OR LADDSRVREF->ZIEME = LDMRDETAILREF->LDMRPOSREF->ZIEME.
-  LQUANT = LADDSRVREF->ZMENG.
-ELSE.
-  CL_EEWA_BO_MEASUREMENT=>CL_UNIT_CONVERSION2(
-    EXPORTING
-      PAR_QUANIN  = LADDSRVREF->ZMENG
-      PAR_UNITIN  = LADDSRVREF->ZIEME
-      PAR_UNITOUT = LDMRDETAILREF->LDMRPOSREF->ZIEME
-    IMPORTING
-      PAR_QUANOUT = LQUANT
-  ).
-ENDIF.
+Ursache gefunden. RA und P&D liefern den richtigen Wert (3,5 H). Der Fehler entsteht beim Verbuchen in die Entsorgungsauftragsposition.
+
+Die in IC angelegte Zusatzleistung hat auf der Position eine Menge, aber keine Mengeneinheit. Beim Verbuchen wird deshalb umgerechnet, und ohne Zieleinheit kommt die Menge in Sekunden zurück: 3,5 H × 3600 = 12.600. Die Einheit bleibt leer.
+
+Korrektur in ZCL_PLCP_TA_WA_ORDER_RSLT, Methode DO_ADDITIONAL_SERVICES: Hat die Position keine Einheit, werden Menge und Einheit unverändert aus der RA übernommen. Aus 3,5 H wird dann 3,5 H.
