@@ -1,1 +1,228 @@
-<img width="957" height="547" alt="image" src="https://github.com/user-attachments/assets/6adf6ae8-544b-409f-8f67-f54a8ee96130" />
+METHOD BOOK_ORDER_ITEMS_SPEC.
+* &1 Detailname
+* &2 Dataref
+* &3 Where clause
+  DEFINE BO_LOOP_DETAIL_REF_WHERE.
+    IF LLPDPATH&1 IS NOT INITIAL.
+      LOOP AT <LLPDITEMS&1> REFERENCE INTO LLPDREF&1 WHERE (&3).
+        ASSIGN (LLPDPATH&1) TO <LLPDITEM&1>.
+        GET REFERENCE OF <LLPDITEM&1> INTO &2.
+  END-OF-DEFINITION.
+
+  DATA:
+    LITEMKEYS_ACT       TYPE STANDARD TABLE OF TITEMORDERKEY,
+    LITEMKEYREF         TYPE REF TO TITEMORDERKEY,
+    LORDERNRS           TYPE STANDARD TABLE OF EORDERNR,
+    LBO                 TYPE REF TO CL_EEWA_BO_WDORDER,
+    LITEMREF            TYPE REF TO EWASWDORDERITEMDET,
+    LSERVICECAT         TYPE SERVICE_CAT,
+    LBO_ITEM            TYPE REF TO ZCL_WR_EEWA_BO_WDORDERITEM,
+    LT_ITEM_KEY_CONFIRM TYPE STANDARD TABLE OF EWA_ORDER_OBJECT_IKEY.
+
+
+  IF LINES( ORDERITEMRESULTS ) IS NOT INITIAL.
+
+**** Get Current keys.
+**** Determine Items to move
+**** Move Items
+**** Fill Result data
+
+*** Move items
+    PREPARE_ORDER_ITEMS( ).
+
+*** D&D is done. Targets exists.
+*      clear LITEMKEYS_ACT.
+
+    SELECT * INTO CORRESPONDING FIELDS OF TABLE LITEMKEYS_ACT FROM EWA_ORDER_OBJECT
+      INNER JOIN EWA_ORDER_HEAD ON EWA_ORDER_OBJECT~ORDERNR = EWA_ORDER_HEAD~ORDERNR
+      FOR ALL ENTRIES IN ORDERITEMRESULTS
+      WHERE POBJNR = ORDERITEMRESULTS-POBJNR
+        AND EWA_ORDER_HEAD~ORDER_DATE = ORDERITEMRESULTS-ORDER_DATE
+        AND /PLCP/PD_TOUR_ID = ORDERITEMRESULTS-/PLCP/PD_TOUR_ID
+        AND ROUTE = ORDERITEMRESULTS-ROUTE.
+**   todo Status
+
+    LORDERNRS = VALUE #( FOR L IN LITEMKEYS_ACT ( L-ORDERNR ) ).
+
+    SORT LORDERNRS.
+    DELETE ADJACENT DUPLICATES FROM LORDERNRS.
+
+    LOOP AT LORDERNRS REFERENCE INTO DATA(LORDERNRREF).
+      TRY.
+
+          IF LBO IS INITIAL OR LBO->DATAREF->ORDERNR <> LORDERNRREF->*.
+            LBO ?= GET_ORDER_BO( PAR_KEY = LORDERNRREF->* PAR_LOCK = 'X' ).
+            LBO->RELOAD_DATA( ).
+          ENDIF.
+
+
+          BO_DATA_LOOP_DETAIL_VAR LBO ITEM.
+
+          TRY.
+              LOOP AT LITEMKEYS_ACT REFERENCE INTO LITEMKEYREF WHERE ORDERNR = LBO->DATAREF->ORDERNR.
+
+                BO_LOOP_DETAIL_REF_WHERE ITEM LITEMREF 'POBJNR = LITEMKEYREF->POBJNR'.
+                LBO_ITEM ?= LBO->GETDETAILBO(
+                  EXPORTING
+                    PAR_NAME        = 'ITEM'
+                    PAR_DETAILINDEX = LITEMREF->DETAIL_INDEX
+                ).
+                ZZ_UPD_WDOI_FROM_SERVICE( IO_BO_WDOI = LBO_ITEM ). "#36113 - WP-3.1.11 P2C2-26
+                FWDOIDEFAULTS = VALUE #( BASE FWDOIDEFAULTS ( CORRESPONDING #( LITEMREF->* ) ) ).
+
+                LOOP AT ORDERITEMRESULTS REFERENCE INTO DATA(LRESULTREF)
+                   WHERE POBJNR = LITEMKEYREF->POBJNR
+*                     AND ( /PLCP/PD_SERVICE_UUID = LITEMREF->/PLCP/PD_SERVICE_UUID )
+                  .
+
+                  ZZ_UPDATE_ELOCSD_NEW( ID_SERV_RESULT = LRESULTREF ).
+
+                  IF PAR_SEQUENCE_ONLY IS INITIAL.
+**** Move results
+                    LSERVICECAT = CL_EEWA_BO_SERVICETYPE=>CL_GET_SERVICE_CAT( PAR_SERVICE_TYPE = LITEMREF->SERVICE_TYPE ).
+
+                    CASE LSERVICECAT.
+                      WHEN CL_EEWA_BO_SERVICETYPE=>CSC_TRANSPORT.
+
+                        LITEMREF->BEHTYP_RM = LRESULTREF->BEH_TYPE_NEW.
+                        LITEMREF->BEH_ANZAHL_RM = LRESULTREF->BEH_ANZAHL_NEW.
+                        LITEMREF->/PLCP/TIDNR_RM = LRESULTREF->TIDNR_NEW.
+                        IF LRESULTREF->TIDNR_NEW IS NOT INITIAL.
+                          SELECT SINGLE SERNR FROM EQUI AS EQ INNER JOIN EQUZ AS EZ ON EZ~EQUNR = EQ~EQUNR
+                              WHERE EQ~MATNR = @LITEMREF->BEHTYP_RM
+                                AND ( EZ~DATBI <= @LITEMREF->ORDER_DATE AND EZ~DATAB >= @LITEMREF->ORDER_DATE )
+                                INTO @LITEMREF->SERNR_RM_NEW. "REMSERNR
+                        ENDIF.
+** SERNR
+
+                      WHEN CL_EEWA_BO_SERVICETYPE=>CSC_SWITCH.
+
+                        LITEMREF->BEHTYP_RM = LRESULTREF->BEH_TYPE_NEW.
+                        LITEMREF->BEH_ANZAHL_RM = LRESULTREF->BEH_ANZAHL_NEW.
+                        LITEMREF->/PLCP/TIDNR_NEW_RM = LRESULTREF->TIDNR_NEW.
+                        LITEMREF->/PLCP/TIDNR_RM = LRESULTREF->TIDNR.
+
+                        IF LRESULTREF->TIDNR_NEW IS NOT INITIAL.
+                          SELECT SINGLE SERNR FROM EQUI AS EQ INNER JOIN EQUZ AS EZ ON EZ~EQUNR = EQ~EQUNR
+                              WHERE EQ~MATNR = @LITEMREF->BEHTYP_RM
+                                AND ( EZ~DATBI <= @LITEMREF->ORDER_DATE AND EZ~DATAB >= @LITEMREF->ORDER_DATE )
+                                INTO @LITEMREF->SERNR_RM_NEW.
+                        ENDIF.
+
+                      WHEN OTHERS.
+
+                        LITEMREF->BEHTYP_RM = LRESULTREF->BEH_TYPE.
+                        LITEMREF->BEH_ANZAHL_RM = LRESULTREF->BEH_ANZAHL.
+                        LITEMREF->BEH_TYPE_NEW = LRESULTREF->BEH_TYPE_NEW.
+                        IF LRESULTREF->BEH_ANZAHL_NEW IS NOT INITIAL.
+                          LITEMREF->BEH_ANZAHL_RM = LRESULTREF->BEH_ANZAHL_NEW.
+                        ENDIF.
+                        IF LRESULTREF->TIDNR_NEW IS NOT INITIAL.
+                          LITEMREF->/PLCP/TIDNR_NEW_RM = LRESULTREF->TIDNR_NEW.
+                          SELECT SINGLE SERNR FROM EQUI AS EQ INNER JOIN EQUZ AS EZ ON EZ~EQUNR = EQ~EQUNR
+                            WHERE EQ~MATNR = @LITEMREF->BEH_TYPE_NEW
+                              AND ( EZ~DATBI <= @LITEMREF->ORDER_DATE AND EZ~DATAB >= @LITEMREF->ORDER_DATE )
+                              INTO @LITEMREF->SERNR_RM_NEW.
+                        ENDIF.
+                        IF LRESULTREF->TIDNR IS NOT INITIAL.
+                          LITEMREF->/PLCP/TIDNR_RM = LRESULTREF->TIDNR.
+                        ENDIF.
+
+                    ENDCASE.
+
+*                    LITEMREF->WASTE = LRESULTREF->WASTE_TYPE.
+                    LITEMREF->WASTE_TYPE = LRESULTREF->WASTE_TYPE.
+                    LITEMREF->WASTE = LRESULTREF->WASTE_TYPE.
+                    LITEMREF->WASTE_WEIGHT = LRESULTREF->WASTE_WEIGHT.
+                    LITEMREF->WEIGHT_UNIT = LRESULTREF->WEIGHT_UNIT.
+
+***** todo SERNR NEW based on TIDNR!
+
+                    LOOP AT LRESULTREF->CONFNOTES REFERENCE INTO DATA(LCONFNOTEREF).
+                      IF LITEMREF->CONFTYPE1 IS INITIAL.
+                        LITEMREF->CONFTYPE1 = LCONFNOTEREF->CONFTYPE.
+                        LITEMREF->TEXT = LITEMREF->TEXT && ` ` && LCONFNOTEREF->CONFNOTE_COMMENT.
+                      ELSEIF LITEMREF->CONFTYPE2 IS INITIAL.
+                        LITEMREF->CONFTYPE2 = LCONFNOTEREF->CONFTYPE.
+                        LITEMREF->TEXT = LITEMREF->TEXT && ` ` && LCONFNOTEREF->CONFNOTE_COMMENT.
+                      ELSEIF LITEMREF->CONFTYPE3 IS INITIAL.
+                        LITEMREF->CONFTYPE3 = LCONFNOTEREF->CONFTYPE.
+                        LITEMREF->TEXT = LITEMREF->TEXT && ` ` && LCONFNOTEREF->CONFNOTE_COMMENT.
+                      ENDIF.
+                    ENDLOOP.
+
+                    ZZ_IMPORT_INFO_CONFNOTES(
+                      IO_BO   = LBO_ITEM
+                      IT_CONFNOTES = LRESULTREF->ZZ_CONFNOTES_INFO ).
+
+                    CONVERT TIME STAMP LRESULTREF->TIMESTAMP TIME ZONE SY-ZONLO
+                      INTO TIME LITEMREF->ACTUAL_TIME.
+
+                  ENDIF.
+
+**** Fields which has to be updated always
+                  LITEMREF->/PLCP/PD_SERVICE_UUID = LRESULTREF->/PLCP/PD_SERVICE_UUID.
+                  LITEMREF->ROUTE_SEQUENCE = LRESULTREF->ROUTE_SEQUENCE.
+
+                  DO_ADDITIONAL_SERVICES(
+                    EXPORTING
+                      PAR_BO_ORDERHEAD = LBO
+                      PAR_ITEMREF = LITEMREF
+                      PAR_ADDITIONAL_SERVICES = LRESULTREF->ADDITIONAL_SERVICES
+                    ).
+
+                ENDLOOP.
+                IF SY-SUBRC IS INITIAL.
+                  LBO->ITEM_CHANGED( PAR_DETAILINDEX = LITEMREF->DETAIL_INDEX ).
+                ENDIF.
+**#36097 WP-3.1.11 P2C2-25 Auto.confirmation /*
+                IF PAR_SEQUENCE_ONLY IS INITIAL.
+                  INSERT LBO_ITEM->DATAREF->KEY INTO TABLE LT_ITEM_KEY_CONFIRM.
+*                  ZZ_CONFIRM_WDOI( IO_BO_WDOI = LBO_ITEM ).
+                ENDIF.
+* */
+                BO_ENDLOOP_DETAIL.
+
+              ENDLOOP.
+
+              TA_BO_SAVE LBO.
+
+            CLEANUP.
+              TA_BO_UNLOCK LBO.
+          ENDTRY.
+
+          TA_BO_UNLOCK LBO.
+
+          SORT LT_ITEM_KEY_CONFIRM.
+          DELETE ADJACENT DUPLICATES FROM LT_ITEM_KEY_CONFIRM.
+
+          LOOP AT LT_ITEM_KEY_CONFIRM INTO DATA(LS_ITEM_KEY).
+            LBO_ITEM ?= GETBO(
+              EXPORTING
+                PAR_OBJTYPE   = CL_EEWA_BO_WDORDERITEM=>COT_WDORDERITEM
+                PAR_KEY       = LS_ITEM_KEY
+                PAR_LOCK      = 'X'              " PAR_LOCK
+            ).
+            TRY.
+                ZZ_CONFIRM_WDOI( IO_BO_WDOI = LBO_ITEM ).
+                SAVE_BO( LBO_ITEM ).
+              CLEANUP.
+                LBO_ITEM->UNLOCK_FOR_EDIT( ).
+            ENDTRY.
+            LBO_ITEM->UNLOCK_FOR_EDIT( ).
+          ENDLOOP.
+
+        CATCH CX_EEWA_BASE INTO EXCEPTION.
+          CALLBACK_REPORT(
+            PAR_KIND      = EXCEPTION->MSGTYPE
+            PAR_EXCEPTION = EXCEPTION
+          ).
+      ENDTRY.
+
+    ENDLOOP.
+
+    HANDLE_CHANGED_ITEM_DATA( ).
+
+  ENDIF.
+
+ENDMETHOD.
