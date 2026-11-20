@@ -1,6 +1,3 @@
-" old
-  IF ltourid IS NOT INITIAL.
+Ursache gefunden. Die automatische positive Rückmeldung schaut bisher gar nicht auf den Fahrzeugtyp: Jede Position mit P&D-Service und Tour-ID wird rückgemeldet, egal welches Fahrzeug dem Auftrag zugeordnet ist, und deshalb auch der Auftrag mit Truck 5427 (Rolloff).
 
-" new
-  IF ltourid IS NOT INITIAL
-     AND zz_is_auto_confirm_vehicle( io_bo_wdoi->dataref->ordernr ) = abap_true.
+Korrigiert habe ich das in ZCL_PLCP_TA_WA_ORDER_RSLT, Methode ZZ_CONFIRM_WDOI. Vor der Rückmeldung wird jetzt das Fahrzeug des Auftrags gelesen. Automatisch rückgemeldet wird nur noch, wenn dessen Flottenobjekttyp 6000 (Front loader) oder 6004 (Rear loader) ist. Alle anderen Positionen bleiben offen und werden wie bisher manuell im Cockpit rückgemeldet, auch die von Aufträgen ohne Fahrzeug.
