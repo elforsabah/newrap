@@ -1,1 +1,1 @@
-konkatenieren mit Abfallmenge+Einheit (außer bei null bzw. default / ggf. nur bei Material ausliefern)
+#40067 - BMS-Schnittstelle Aufträge SAP→BMS - Voranalyse/Entwicklung
