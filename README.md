@@ -1,4 +1,3 @@
-
   METHOD precheck_anlageaendern.
 
     TYPES:
@@ -20,6 +19,13 @@
       FIELDS ( serviceuuid referenceinternalid referenceid )
       WITH CORRESPONDING #( keys )
       RESULT DATA(lt_services).
+
+    " ---------------------------------------------------------------------
+    " Lock in BMS status BEGONNEN (07_Change_Lock): one read for all
+    " selected services. A started service is refused before any other check.
+    " ---------------------------------------------------------------------
+    DATA(lt_bms_started) = zcl_wr_pd_tour_helper=>get_bms_started_services(
+      VALUE #( FOR ls_s IN lt_services ( ls_s-serviceuuid ) ) ).
 
     " ---------------------------------------------------------------------
     " Scheine on an eANV Nachweis — one mass read for all selected EAPs.
@@ -52,6 +58,24 @@
     LOOP AT lt_services ASSIGNING FIELD-SYMBOL(<ls_service>).
 
       CLEAR: ls_eanv_note, lv_pobjnr.
+
+      " ---------------------------------------------------------------------
+      " Validation 0: service started in BMS → no change at all
+      " ---------------------------------------------------------------------
+      READ TABLE lt_bms_started ASSIGNING FIELD-SYMBOL(<ls_started>)
+        WITH TABLE KEY service_uuid = <ls_service>-serviceuuid.
+      IF sy-subrc = 0.
+        APPEND VALUE #( %tky = <ls_service>-%tky
+                        %fail-cause = if_abap_behv=>cause-unspecific ) TO failed-service.
+        APPEND VALUE #( %tky = <ls_service>-%tky
+                        %msg = new_message(
+                                 id       = 'Z_MSG_SVR_TOUR_EXT'
+                                 number   = '058'
+                                 severity = if_abap_behv_message=>severity-error
+                                 v1       = condense( |{ <ls_started>-reference_id ALPHA = OUT }| ) )
+                      ) TO reported-service.
+        CONTINUE.
+      ENDIF.
 
       " Get the parameter for THIS service
       DATA(ls_param) = keys[ %tky = <ls_service>-%tky ]-%param.
