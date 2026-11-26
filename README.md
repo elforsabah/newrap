@@ -1,134 +1,5 @@
-  METHOD precheck_assignworkarea.
 
-    " Lock in BMS status BEGONNEN (07_Change_Lock): a started service is not changed
-    DATA(lt_bms_started) = zcl_wr_pd_tour_helper=>get_bms_started_services(
-      VALUE #( FOR ls_k IN keys ( ls_k-serviceuuid ) ) ).
-
-    LOOP AT keys ASSIGNING FIELD-SYMBOL(<ls_key>).
-
-      READ TABLE lt_bms_started ASSIGNING FIELD-SYMBOL(<ls_started>)
-        WITH TABLE KEY service_uuid = <ls_key>-serviceuuid.
-      IF sy-subrc <> 0.
-        CONTINUE.
-      ENDIF.
-
-      APPEND VALUE #( %tky        = <ls_key>-%tky
-                      %fail-cause = if_abap_behv=>cause-unspecific ) TO failed-service.
-      APPEND VALUE #( %tky = <ls_key>-%tky
-                      %msg = new_message(
-                               id       = 'Z_MSG_SVR_TOUR_EXT'
-                               number   = '058'
-                               severity = if_abap_behv_message=>severity-error
-                               v1       = condense( |{ <ls_started>-reference_id ALPHA = OUT }| ) )
-                    ) TO reported-service.
-
-    ENDLOOP.
-
-  ENDMETHOD.
-
-
-    METHOD precheck_terminateservice.
-
-    " Lock in BMS status BEGONNEN (07_Change_Lock): a started service is not cancelled from SAP
-    DATA(lt_bms_started) = zcl_wr_pd_tour_helper=>get_bms_started_services(
-      VALUE #( FOR ls_k IN keys ( ls_k-serviceuuid ) ) ).
-
-    LOOP AT keys ASSIGNING FIELD-SYMBOL(<ls_key>).
-
-      READ TABLE lt_bms_started ASSIGNING FIELD-SYMBOL(<ls_started>)
-        WITH TABLE KEY service_uuid = <ls_key>-serviceuuid.
-      IF sy-subrc <> 0.
-        CONTINUE.
-      ENDIF.
-
-      APPEND VALUE #( %tky        = <ls_key>-%tky
-                      %fail-cause = if_abap_behv=>cause-unspecific ) TO failed-service.
-      APPEND VALUE #( %tky = <ls_key>-%tky
-                      %msg = new_message(
-                               id       = 'Z_MSG_SVR_TOUR_EXT'
-                               number   = '058'
-                               severity = if_abap_behv_message=>severity-error
-                               v1       = condense( |{ <ls_started>-reference_id ALPHA = OUT }| ) )
-                    ) TO reported-service.
-
-    ENDLOOP.
-
-  ENDMETHOD.
-
-
-    METHOD precheck_adjusttime.
-
-    " Lock in BMS status BEGONNEN (07_Change_Lock): checked before the input checks
-    DATA(lt_bms_started) = zcl_wr_pd_tour_helper=>get_bms_started_services(
-      VALUE #( FOR ls_k IN keys ( ls_k-serviceuuid ) ) ).
-
-    LOOP AT keys ASSIGNING FIELD-SYMBOL(<ls_key>).
-
-      READ TABLE lt_bms_started ASSIGNING FIELD-SYMBOL(<ls_started>)
-        WITH TABLE KEY service_uuid = <ls_key>-serviceuuid.
-      IF sy-subrc = 0.
-        APPEND VALUE #( %tky        = <ls_key>-%tky
-                        %fail-cause = if_abap_behv=>cause-unspecific ) TO failed-service.
-        APPEND VALUE #( %tky = <ls_key>-%tky
-                        %msg = new_message(
-                                 id       = 'Z_MSG_SVR_TOUR_EXT'
-                                 number   = '058'
-                                 severity = if_abap_behv_message=>severity-error
-                                 v1       = condense( |{ <ls_started>-reference_id ALPHA = OUT }| ) )
-                      ) TO reported-service.
-        CONTINUE.
-      ENDIF.
-
-      " ---------------------------------------------------------------------
-      " 1. Parse Input & Format Validation
-      " ---------------------------------------------------------------------
-      DATA(lv_input_str) = CONV string( <ls_key>-%param-zeitinmin ).
-      REPLACE ALL OCCURRENCES OF ',' IN lv_input_str WITH '.'.
-      CONDENSE lv_input_str NO-GAPS.
-
-      " Regex: Allow integers or decimals, optional minus sign
-      IF lv_input_str IS NOT INITIAL.
-        IF NOT matches( val = lv_input_str regex = '^-?[0-9]+([.,][0-9]+)?$' ).
-          APPEND VALUE #( %tky = <ls_key>-%tky
-                          %fail-cause = if_abap_behv=>cause-unspecific ) TO failed-service.
-          APPEND VALUE #( %tky = <ls_key>-%tky
-                          %msg = new_message(
-                                   id       = 'Z_MSG_SVR_TOUR_EXT'
-                                   number   = '005'
-                                   severity = if_abap_behv_message=>severity-error )
-                        ) TO reported-service.
-          CONTINUE.
-        ENDIF.
-      ENDIF.
-
-      " Convert to Number for calculations
-      DATA lv_adj_min  TYPE decfloat34.
-      TRY.
-          lv_adj_min = lv_input_str.
-        CATCH cx_sy_conversion_no_number.
-          CONTINUE.
-      ENDTRY.
-
-      " ---------------------------------------------------------------------
-      " 2. Limit Check: Max +/- 600 Minutes (10 Hours)
-      " ---------------------------------------------------------------------
-      IF lv_adj_min > 600 OR lv_adj_min < -600.
-        APPEND VALUE #( %tky = <ls_key>-%tky
-                        %fail-cause = if_abap_behv=>cause-unspecific ) TO failed-service.
-        APPEND VALUE #( %tky = <ls_key>-%tky
-                        %msg = new_message(
-                                 id       = 'Z_MSG_SVR_TOUR_EXT'
-                                 number   = '006'
-                                 severity = if_abap_behv_message=>severity-error )
-                      ) TO reported-service.
-        CONTINUE.
-      ENDIF.
-    ENDLOOP.
-
-  ENDMETHOD.
-
-
-    METHOD precheck_anlageaendern.
+  METHOD precheck_anlageaendern.
 
     TYPES:
       BEGIN OF ty_pobj,
@@ -149,10 +20,6 @@
       FIELDS ( serviceuuid referenceinternalid referenceid )
       WITH CORRESPONDING #( keys )
       RESULT DATA(lt_services).
-
-    " Lock in BMS status BEGONNEN (07_Change_Lock): one read for all selected services
-    DATA(lt_bms_started) = zcl_wr_pd_tour_helper=>get_bms_started_services(
-      VALUE #( FOR ls_s IN lt_services ( ls_s-serviceuuid ) ) ).
 
     " ---------------------------------------------------------------------
     " Scheine on an eANV Nachweis — one mass read for all selected EAPs.
@@ -186,23 +53,156 @@
 
       CLEAR: ls_eanv_note, lv_pobjnr.
 
+      " Get the parameter for THIS service
+      DATA(ls_param) = keys[ %tky = <ls_service>-%tky ]-%param.
+
+      " Get order details
+      SELECT SINGLE *
+        FROM ewa_order_object
+        WHERE pobjnr = @<ls_service>-referenceinternalid
+        INTO @DATA(ls_order).
+
+      IF sy-subrc <> 0.
+        CONTINUE.
+      ENDIF.
+
       " ---------------------------------------------------------------------
-      " Validation 0: started in BMS → no change at all
+      " Validation 1: Check for Fixed Disposal Contract
       " ---------------------------------------------------------------------
-      READ TABLE lt_bms_started ASSIGNING FIELD-SYMBOL(<ls_started>)
-        WITH TABLE KEY service_uuid = <ls_service>-serviceuuid.
+      IF ls_order-wdplantnr IS NOT INITIAL.
+        SELECT SINGLE zz_framework_agreement
+          FROM ewa_el_wdplant
+          WHERE wdplantnr = @ls_order-wdplantnr
+          INTO @DATA(lv_existing_contract).
+
+        IF sy-subrc = 0 AND lv_existing_contract IS NOT INITIAL.
+          APPEND VALUE #( %tky = <ls_service>-%tky
+                          %fail-cause = if_abap_behv=>cause-unspecific ) TO failed-service.
+          APPEND VALUE #( %tky = <ls_service>-%tky
+                          %msg = new_message(
+                                   id       = 'Z_MSG_SVR_TOUR_EXT'
+                                   number   = '010'
+                                   severity = if_abap_behv_message=>severity-error
+                                   )
+                        ) TO reported-service.
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+
+      " ---------------------------------------------------------------------
+      " Validation 2: EAP has a Schein on an eANV Nachweis → no ESA change
+      "   Ticket check 1. Only Scheine whose Nachweis takes part in eANV
+      "   count (TARBNW-DIGI_SIG, same rule as #42128). An EAP without
+      "   Schein, or with a Schein on a paper Nachweis, goes on to the
+      "   ESA checks and the AVV check (ticket check 2).
+      " ---------------------------------------------------------------------
+      lv_pobjnr = <ls_service>-referenceinternalid.
+
+      READ TABLE lt_eanv_notes INTO ls_eanv_note
+        WITH TABLE KEY pobjnr = lv_pobjnr.
+
       IF sy-subrc = 0.
-        APPEND VALUE #( %tky        = <ls_service>-%tky
+        APPEND VALUE #( %tky = <ls_service>-%tky
                         %fail-cause = if_abap_behv=>cause-unspecific ) TO failed-service.
         APPEND VALUE #( %tky = <ls_service>-%tky
                         %msg = new_message(
                                  id       = 'Z_MSG_SVR_TOUR_EXT'
-                                 number   = '058'
+                                 number   = '057'
                                  severity = if_abap_behv_message=>severity-error
-                                 v1       = condense( |{ <ls_started>-reference_id ALPHA = OUT }| ) )
+                                 v1       = condense( |{ <ls_service>-referenceid ALPHA = OUT }| )
+                                 v2       = ls_eanv_note-notenr
+                                 v3       = CONV #( ls_param-anlage )
+                                 v4       = ls_eanv_note-nwnr )
                       ) TO reported-service.
         CONTINUE.
       ENDIF.
 
-      " Get the parameter for THIS service
-      DATA(ls_param) = keys[ %tky = <ls_service>-%tky ]-%param.
+      " ---------------------------------------------------------------------
+      " Validation 3: Check if facility is selected
+      " ---------------------------------------------------------------------
+      IF ls_param-anlage IS INITIAL.
+        APPEND VALUE #( %tky = <ls_service>-%tky
+                        %fail-cause = if_abap_behv=>cause-unspecific ) TO failed-service.
+        APPEND VALUE #( %tky = <ls_service>-%tky
+                        %msg = new_message(
+                                 id       = 'Z_MSG_SVR_TOUR_EXT'
+                                 number   = '011'
+                                 severity = if_abap_behv_message=>severity-error
+                                  )
+                      ) TO reported-service.
+*        CONTINUE.
+      ENDIF.
+
+      " ---------------------------------------------------------------------
+      " Validation 4: Check facility exists and is available
+      " ---------------------------------------------------------------------
+      SELECT SINGLE wdplantnr, zz_available_dispo, zz_framework_agreement
+        FROM ewa_el_wdplant
+        WHERE wdplantnr = @ls_param-anlage
+        INTO @DATA(ls_plant).
+
+      IF sy-subrc <> 0.
+        APPEND VALUE #( %tky = <ls_service>-%tky
+                        %fail-cause = if_abap_behv=>cause-unspecific ) TO failed-service.
+        APPEND VALUE #( %tky = <ls_service>-%tky
+                        %msg = new_message(
+                                 id       = 'Z_MSG_SVR_TOUR_EXT'
+                                 number   = '012'
+                                 severity = if_abap_behv_message=>severity-error
+                                 v1       = CONV #( ls_param-anlage ) )
+                      ) TO reported-service.
+        CONTINUE.
+      ENDIF.
+
+      IF ls_plant-zz_available_dispo IS INITIAL OR ls_plant-zz_available_dispo <> 'X'.
+        APPEND VALUE #( %tky = <ls_service>-%tky
+                        %fail-cause = if_abap_behv=>cause-unspecific ) TO failed-service.
+        APPEND VALUE #( %tky = <ls_service>-%tky
+                        %msg = new_message(
+                                 id       = 'Z_MSG_SVR_TOUR_EXT'
+                                 number   = '013'
+                                 severity = if_abap_behv_message=>severity-error
+                                 v1       = CONV #( ls_param-anlage ) )
+                      ) TO reported-service.
+        CONTINUE.
+      ENDIF.
+
+      " ---------------------------------------------------------------------
+      " Validation 5: AVV-Code matching
+      " ---------------------------------------------------------------------
+      SELECT COUNT(*)
+        FROM /watp/twdplanavv
+        WHERE wdplantnr = @ls_param-anlage
+        INTO @DATA(lv_avv_count).
+
+      IF lv_avv_count > 0.
+        " AVV assignments exist - must validate
+        SELECT SINGLE /watp/avvcode
+          FROM ewa_order_object
+          WHERE pobjnr = @<ls_service>-referenceinternalid
+          INTO @DATA(lv_order_avvcode).
+
+        IF sy-subrc = 0 AND lv_order_avvcode IS NOT INITIAL.
+          SELECT SINGLE avvcode
+            FROM /watp/twdplanavv
+            WHERE wdplantnr = @ls_param-anlage
+              AND avvcode = @lv_order_avvcode
+            INTO @DATA(lv_found_avv).
+
+          IF sy-subrc <> 0.
+            APPEND VALUE #( %tky = <ls_service>-%tky
+                            %fail-cause = if_abap_behv=>cause-unspecific ) TO failed-service.
+            APPEND VALUE #( %tky = <ls_service>-%tky
+                            %msg = new_message(
+                                     id       = 'Z_MSG_SVR_TOUR_EXT'
+                                     number   = '014'
+                                     severity = if_abap_behv_message=>severity-error
+                                     v1       = CONV #( lv_order_avvcode ) )
+                          ) TO reported-service.
+            CONTINUE.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+
+    ENDLOOP.
+  ENDMETHOD.
